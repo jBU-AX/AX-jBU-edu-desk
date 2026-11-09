@@ -111,7 +111,12 @@ export function buildDemo(today: string): DeskData {
             personId: person.id,
             companyId: comp.id,
             price: status === '취소' ? 0 : Math.round((p.listPrice * disc) / 1000) * 1000,
-            paidAt: toISO(addDays(fromISO(s.start), -Math.floor(7 + r() * 35))),
+            ...(() => {
+              const reg = addDays(fromISO(s.start), -Math.floor(7 + r() * 40));
+              const paid = addDays(reg, Math.floor(r() * 5));
+              const unpaid = status === '신청' && r() < 0.25;
+              return { registeredAt: toISO(reg), paidAt: unpaid || toISO(paid) > today ? null : toISO(paid) };
+            })(),
             payer: r() < 0.8 ? '회사' : '개인',
             channel: pick(CHANNEL),
             status,

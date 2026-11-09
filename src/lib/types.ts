@@ -74,7 +74,8 @@ export interface Enrollment {
   personId: string;
   companyId: string;
   price: number; // 실제 결제 금액(원, VAT 별도)
-  paidAt: string;
+  registeredAt: string; // 등록(신청)일
+  paidAt: string | null; // 결제일. 아직 결제 전이면 null
   payer: '회사' | '개인';
   channel: string; // 신청 경로
   status: EnrollmentStatus;

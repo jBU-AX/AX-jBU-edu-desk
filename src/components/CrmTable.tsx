@@ -8,7 +8,9 @@ interface Lite { programs: Program[]; cohorts: Cohort[]; people: Person[]; enrol
 const manwon = (n: number) => Math.round(n / 1e4).toLocaleString('ko-KR') + '만원';
 type Sort = 'revenue' | 'last' | 'cohorts';
 
-export default function CrmTable({ rows, data }: { rows: CompanyRow[]; data: Lite }) {
+export default function CrmTable({ rows: allRows, byYear, data }: { rows: CompanyRow[]; byYear: Record<string, CompanyRow[]>; data: Lite }) {
+  const [year, setYear] = useState('');
+  const rows = year ? byYear[year] : allRows;
   const [q, setQ] = useState('');
   const [prog, setProg] = useState('');
   const [onlyRepeat, setOnlyRepeat] = useState(false);
@@ -33,9 +35,13 @@ export default function CrmTable({ rows, data }: { rows: CompanyRow[]; data: Lit
           <option value="">모든 교육</option>
           {data.programs.map((p) => <option key={p.slug} value={p.slug}>{p.name}</option>)}
         </select>
+        <select value={year} onChange={(e) => setYear(e.target.value)} aria-label="결제·등록 연도">
+          <option value="">2024~2026년 전체</option>
+          {Object.keys(byYear).sort().reverse().map((y) => <option key={y} value={y}>{y}년 결제·등록</option>)}
+        </select>
         <select value={sort} onChange={(e) => setSort(e.target.value as Sort)} aria-label="정렬">
           <option value="revenue">누적 결제 많은 순</option>
-          <option value="last">최근 참여 순</option>
+          <option value="last">최근 결제·등록 순</option>
           <option value="cohorts">참여 횟수 많은 순</option>
         </select>
         <label><input type="checkbox" checked={onlyRepeat} onChange={(e) => setOnlyRepeat(e.target.checked)} /> 다시 온 기업만</label>
@@ -44,7 +50,7 @@ export default function CrmTable({ rows, data }: { rows: CompanyRow[]; data: Lit
       </div>
       <div className="tbl-wrap">
         <table className="tbl">
-          <thead><tr><th>기업</th><th>업종 · 규모</th><th>들은 교육</th><th className="num">참여 횟수</th><th className="num">참여자</th><th className="num">누적 결제</th><th>최근 참여</th><th>다음 제안</th></tr></thead>
+          <thead><tr><th>기업</th><th>업종 · 규모</th><th>들은 교육</th><th className="num">참여 횟수</th><th className="num">참여자</th><th className="num">누적 결제</th><th>최근 결제·등록</th><th>다음 제안</th></tr></thead>
           <tbody>
             {list.slice(0, shown).map((r) => (
               <tr key={r.company.id} className="clickable" onClick={() => setOpen(r)} tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter') setOpen(r); }}>
@@ -84,7 +90,7 @@ function CompanyDrawer({ row, data, P, onClose }: { row: CompanyRow; data: Lite;
         <dl className="kv">
           <dt>업종</dt><dd>{row.company.industry}</dd>
           <dt>규모 · 지역</dt><dd>{row.company.size} · {row.company.region}</dd>
-          <dt>첫 참여</dt><dd>{row.first.replace(/-/g, '.')}</dd>
+          <dt>첫 결제·등록</dt><dd>{row.first.replace(/-/g, '.')}</dd>
           <dt>누적 결제</dt><dd><b>{manwon(row.revenue)}</b> ({row.cohorts}회, {row.people}명)</dd>
         </dl>
         {row.suggest && <p className="suggest">{P.get(row.suggest)!.name}을(를) 아직 듣지 않았습니다. 다음 기수 안내 대상으로 볼 만합니다.</p>}
@@ -97,7 +103,7 @@ function CompanyDrawer({ row, data, P, onClose }: { row: CompanyRow; data: Lite;
               <li key={c.id} style={{ ['--c' as string]: p.color }}>
                 <div><b>{p.name} {c.no}기</b> <span className="when">{c.start.slice(0, 4)}. {md(c.start)}</span></div>
                 <div className="small">{ppl.map((e) => { const x = byPerson.get(e.personId)!; return `${x.name} ${x.title}${e.status === '수료' ? '' : ` (${e.status})`}`; }).join(', ')}</div>
-                <div className="small muted">{manwon(ppl.reduce((s, e) => s + e.price, 0))} · {ppl[0].channel}</div>
+                <div className="small muted">{manwon(ppl.reduce((s, e) => s + e.price, 0))} · {ppl[0].paidAt ? `${ppl[0].paidAt.replace(/-/g, '.')} 결제` : `${ppl[0].registeredAt.replace(/-/g, '.')} 등록, 결제 전`} · {ppl[0].channel}</div>
               </li>
             );
           })}

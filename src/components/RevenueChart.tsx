@@ -3,7 +3,7 @@ import type { Program } from '@/lib/types';
 interface Row { month: string; bySlug: Record<string, number>; total: number }
 
 /** 월별 매출 누적 막대. 막대 색은 교육 탭 색과 같습니다. */
-export default function RevenueChart({ rows, programs, today }: { rows: Row[]; programs: Program[]; today: string }) {
+export default function RevenueChart({ rows, programs, today, dimFuture = true }: { rows: Row[]; programs: Program[]; today: string; dimFuture?: boolean }) {
   const W = 720, H = 220, L = 44, B = 24, T = 8;
   const max = Math.max(1, ...rows.map((r) => r.total));
   const step = niceStep(max);
@@ -24,7 +24,7 @@ export default function RevenueChart({ rows, programs, today }: { rows: Row[]; p
         let acc = 0;
         const x = L + i * bw + bw * 0.18;
         const w = bw * 0.64;
-        const future = r.month > curMonth;
+        const future = dimFuture && r.month > curMonth;
         return (
           <g key={r.month} opacity={future ? 0.45 : 1}>
             {programs.map((p) => {

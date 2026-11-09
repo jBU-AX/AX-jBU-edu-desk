@@ -3,7 +3,8 @@ import { getData } from '@/lib/data';
 import { companyRows, manwon, monthlyRevenue, pct, programSummary, revenueByYear, taskBoard } from '@/lib/metrics';
 import { toView } from '@/lib/views';
 import { ymd } from '@/lib/dates';
-import RevenueChart from '@/components/RevenueChart';
+import RevenuePanel from '@/components/RevenuePanel';
+import { SCOPE, type RevenueBasis } from '@/lib/scope';
 import ScheduleStrip from '@/components/ScheduleStrip';
 import TaskBoard from '@/components/TaskBoard';
 import DemoNote from '@/components/DemoNote';
@@ -11,20 +12,15 @@ import DemoNote from '@/components/DemoNote';
 export default async function Overview() {
   const data = await getData();
   const year = Number(data.today.slice(0, 4));
-  const ytdThis = revenueByYear(data, year);
-  const lastYear = revenueByYear(data, year - 1);
-  const rows = monthlyRevenue(data, year);
-  // 작년 같은 기간 매출과 비교
-  const cutoff = data.today.slice(5);
-  const sameLast = data.enrollments.reduce((s, e) => {
-    const c = data.cohorts.find((x) => x.id === e.cohortId)!;
-    return c.start.startsWith(String(year - 1)) && c.start.slice(5) <= cutoff && e.status !== '취소' ? s + e.price : s;
-  }, 0);
-  const sameThis = data.enrollments.reduce((s, e) => {
-    const c = data.cohorts.find((x) => x.id === e.cohortId)!;
-    return c.start.startsWith(String(year)) && c.start.slice(5) <= cutoff && e.status !== '취소' ? s + e.price : s;
-  }, 0);
-  const diff = sameLast ? (sameThis - sameLast) / sameLast : 0;
+  const md = data.today.slice(5);
+  const view = (basis: RevenueBasis) => ({
+    ...revenueByYear(data, year, basis),
+    sameThis: revenueByYear(data, year, basis, md).total,
+    sameLast: revenueByYear(data, year - 1, basis, md).total,
+    lastTotal: revenueByYear(data, year - 1, basis).total,
+    rows: monthlyRevenue(data, year, basis)
+  });
+  const views = { paid: view('paid'), course: view('course') };
   const board = taskBoard(data);
   const crm = companyRows(data);
   const repeat = crm.filter((c) => c.repeat);
@@ -37,26 +33,13 @@ export default async function Overview() {
       <div className="page-h">
         <div>
           <h1>공개교육 전체</h1>
-          <p>{ymd(data.today)} 기준 · 교육 {data.programs.length}개</p>
+          <p>{ymd(data.today)} 기준 · 교육 {data.programs.length}개 · {SCOPE.label}</p>
         </div>
       </div>
 
       <div className="grid g-main">
         <section className="sec" aria-labelledby="rev-h">
-          <div className="sec-h"><h2 id="rev-h">{year}년 매출</h2><span className="aside">교육 시작일 기준, VAT 별도</span></div>
-          <div className="rev-head">
-            <span className="rev-num">{manwon(ytdThis.total)}</span>
-            <span className="rev-sub">
-              {ytdThis.people.toLocaleString()}명 참여 · 오늘까지 작년 같은 기간보다{' '}
-              <span className={diff >= 0 ? 'up' : 'down'}>{diff >= 0 ? '+' : ''}{pct(diff)}</span>
-              {' '}· 작년 전체 {manwon(lastYear.total)}
-            </span>
-          </div>
-          <RevenueChart rows={rows} programs={data.programs} today={data.today} />
-          <div className="legend">
-            {data.programs.map((p) => <span key={p.slug}><i style={{ background: p.color }} />{p.short}</span>)}
-            <span className="muted">흐린 막대는 모집 중인 기수(예상)</span>
-          </div>
+          <RevenuePanel year={year} today={data.today} programs={data.programs} views={views} />
 
           <div className="sec-h" style={{ marginTop: 36 }}><h2 id="sch-h">기수 일정</h2><span className="aside">막대를 누르면 그 기수 화면으로 갑니다</span></div>
           <ScheduleStrip data={data} />
@@ -76,7 +59,7 @@ export default async function Overview() {
       <hr className="rule" />
 
       <section className="sec" aria-labelledby="prog-h">
-        <div className="sec-h"><h2 id="prog-h">교육별 {year}년 현황</h2></div>
+        <div className="sec-h"><h2 id="prog-h">교육별 {year}년 현황</h2><span className="aside">{year}년에 열린 기수 기준</span></div>
         <div className="tbl-wrap">
           <table className="tbl">
             <thead><tr><th>교육</th><th className="num">기수</th><th className="num">참여 인원</th><th className="num">정원 대비</th><th className="num">수료율</th><th className="num">1인 평균</th><th className="num">매출</th></tr></thead>

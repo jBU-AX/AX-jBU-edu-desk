@@ -1,6 +1,7 @@
 // 화면에 필요한 계산을 한곳에 모읍니다. 데이터 출처(예시/Supabase)와 상관없이 같은 결과를 냅니다.
 import { addDaysISO, diffDays } from './dates';
 import type { Cohort, Company, DeskData, Enrollment, Program, TaskTemplate } from './types';
+import { customerDate, type RevenueBasis } from './scope';
 
 export type CohortPhase = '모집' | '진행' | '종료';
 
@@ -32,28 +33,40 @@ export const active = (e: Enrollment) => e.status !== '취소';
 
 /* ───────── 매출 ───────── */
 
-export function revenueByYear(data: DeskData, year: number) {
-  const byCohort = new Map(data.cohorts.map((c) => [c.id, c]));
+/**
+ * 매출을 어느 날짜로 묶을지.
+ * paid   = 결제일 기준 (실제로 들어온 돈, 결제 전 신청은 빠짐)
+ * course = 교육일 기준 (그 달에 열린 기수의 매출, 결제 전 신청도 예정 매출로 포함)
+ */
+export function revenueDate(data: DeskData, e: Enrollment, basis: RevenueBasis): string | null {
+  if (!active(e)) return null;
+  if (basis === 'paid') return e.paidAt;
+  return data.cohorts.find((c) => c.id === e.cohortId)!.start;
+}
+
+export function revenueByYear(data: DeskData, year: number, basis: RevenueBasis = 'paid', untilMD?: string) {
   let total = 0, people = 0;
   for (const e of data.enrollments) {
-    const c = byCohort.get(e.cohortId)!;
-    if (!c.start.startsWith(String(year)) || !active(e)) continue;
+    const d = revenueDate(data, e, basis);
+    if (!d || !d.startsWith(String(year))) continue;
+    if (untilMD && d.slice(5) > untilMD) continue;
     total += e.price; people++;
   }
   return { total, people };
 }
 
-/** 월별 매출 (교육 시작일 기준) — [{month:'2026-01', bySlug:{...}, total}] */
-export function monthlyRevenue(data: DeskData, year: number) {
+/** 월별 매출 — [{month:'2026-01', bySlug:{...}, total}] */
+export function monthlyRevenue(data: DeskData, year: number, basis: RevenueBasis = 'paid') {
   const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`);
   const rows = months.map((month) => ({ month, bySlug: {} as Record<string, number>, total: 0 }));
   const byCohort = new Map(data.cohorts.map((c) => [c.id, c]));
   for (const e of data.enrollments) {
-    if (!active(e)) continue;
-    const c = byCohort.get(e.cohortId)!;
-    const idx = months.indexOf(c.start.slice(0, 7));
+    const d = revenueDate(data, e, basis);
+    if (!d) continue;
+    const idx = months.indexOf(d.slice(0, 7));
     if (idx < 0) continue;
-    rows[idx].bySlug[c.program] = (rows[idx].bySlug[c.program] || 0) + e.price;
+    const slug = byCohort.get(e.cohortId)!.program;
+    rows[idx].bySlug[slug] = (rows[idx].bySlug[slug] || 0) + e.price;
     rows[idx].total += e.price;
   }
   return rows;
@@ -163,11 +176,12 @@ const NEXT: Record<string, string[]> = {
   founders: ['plan-workshop']
 };
 
-export function companyRows(data: DeskData): CompanyRow[] {
+export function companyRows(data: DeskData, year?: number): CompanyRow[] {
   const byCohort = new Map(data.cohorts.map((c) => [c.id, c]));
   const map = new Map<string, Enrollment[]>();
   for (const e of data.enrollments) {
     if (!active(e)) continue;
+    if (year && !customerDate(e).startsWith(String(year))) continue;
     if (!map.has(e.companyId)) map.set(e.companyId, []);
     map.get(e.companyId)!.push(e);
   }
@@ -177,7 +191,7 @@ export function companyRows(data: DeskData): CompanyRow[] {
       const es = map.get(company.id)!;
       const cs = [...new Set(es.map((e) => e.cohortId))].map((id) => byCohort.get(id)!);
       const programs = [...new Set(cs.map((c) => c.program))];
-      const dates = cs.map((c) => c.start).sort();
+      const dates = es.map(customerDate).sort();
       const suggest = programs.flatMap((s) => NEXT[s] || []).find((s) => !programs.includes(s)) || null;
       return {
         company,

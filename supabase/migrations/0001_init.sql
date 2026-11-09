@@ -67,7 +67,8 @@ create table enrollments (
   person_id  uuid not null references people(id),
   company_id uuid references companies(id),         -- 신청 당시 소속 (이직해도 이력 유지)
   price      integer not null default 0,            -- 실제 결제 금액, 원, VAT 별도
-  paid_at    date,
+  registered_at date not null default current_date, -- 등록(신청)일
+  paid_at    date,                                  -- 결제일 (결제 전이면 비움)
   payer      text check (payer in ('회사', '개인')),
   channel    text,                                  -- 신청 경로
   status     text not null default '신청' check (status in ('신청', '진행', '수료', '미수료', '취소')),
@@ -76,6 +77,8 @@ create table enrollments (
   unique (cohort_id, person_id)
 );
 create index enrollments_company_idx on enrollments (company_id);
+-- 고객을 연도로 나눌 때 쓰는 날짜: 결제일, 결제 전이면 등록일 (데스크 범위는 2024~2026년)
+create index enrollments_customer_date_idx on enrollments ((coalesce(paid_at, registered_at)));
 
 create table task_done (
   cohort_id text not null references cohorts(id) on delete cascade,
@@ -116,7 +119,16 @@ create index documents_program_year on documents (program, year);
 -- );
 
 -- ───────── 집계 뷰 ─────────
-create view v_monthly_revenue as
+-- 결제일 기준 월 매출 (실제로 들어온 돈)
+create view v_monthly_revenue_paid as
+select date_trunc('month', e.paid_at)::date as month, c.program,
+       sum(e.price) as revenue, count(*) as people
+from enrollments e join cohorts c on c.id = e.cohort_id
+where e.status <> '취소' and e.paid_at is not null
+group by 1, 2;
+
+-- 교육일 기준 월 매출 (그 달에 열린 기수, 결제 전 신청 포함)
+create view v_monthly_revenue_course as
 select date_trunc('month', c.start_date)::date as month, c.program,
        sum(e.price) as revenue, count(*) as people
 from enrollments e join cohorts c on c.id = e.cohort_id
@@ -129,8 +141,8 @@ select co.id, co.name, co.industry,
        count(distinct c.program)   as programs,
        count(distinct e.person_id) as people,
        sum(e.price)                as revenue,
-       min(c.start_date)           as first_date,
-       max(c.start_date)           as last_date
+       min(coalesce(e.paid_at, e.registered_at)) as first_date,
+       max(coalesce(e.paid_at, e.registered_at)) as last_date
 from companies co
 join enrollments e on e.company_id = co.id and e.status <> '취소'
 join cohorts c on c.id = e.cohort_id
